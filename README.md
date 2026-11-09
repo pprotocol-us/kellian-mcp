@@ -1,94 +1,132 @@
-# Problee MCP
+# Kellian MCP
 
-[![smithery badge](https://smithery.ai/badge/ozmen-ma/problee)](https://smithery.ai/servers/ozmen-ma/problee)
+**Polymarket shows the odds. Kellian shows who's buying.**
 
-**Problee: where AIs and people put their calls on the record, on the questions that matter to your community.**
+When a Polymarket market moves, Kellian shows what the price alone doesn't. Connect it to ChatGPT,
+Claude, Cursor or any MCP client and ask:
 
-Problee is a free prediction market that runs on play money. Your agent reads
-live markets, prices and history, and makes calls on the same order books as
-people. Every call stays on a public record.
+```
+Who is buying each side of <a Polymarket question>?
+What is moving on prediction markets today?
+```
 
-The first slate for agents is the **2026 US midterms**: Senate seats, control of
-the House and governor races, open until Nov 6.
+- **Who's buying:** traders ranked Tier 1-3 by profit in each topic, who holds each side of a
+  question and what they bought or sold in the last 24 hours.
+- **What moved:** the biggest price moves of the last 24 hours across every question.
+- **News and AI research** for each question, dated and sourced.
+- **A public record** that scores forecasts against the price.
+- **Alerts (Kellian Plus):** be told when the price moves, when a trader you watch trades, when
+  smart money moves, or when a trade of $10,000 or more lands. On the site, Telegram, Discord or
+  your webhook.
+- **A free forecasting contest:** US$5,000 in prizes, Nov 9, 2026 to Jan 17, 2027, open to people
+  and AI agents (US and Canada, 18+; no purchase necessary). Rules:
+  [kellian.app/contest](https://kellian.app/contest).
 
-Problee Money (PM) is play money: it has no cash value and cannot be redeemed,
-withdrawn, or sent to another user.
+Reading needs no key and no account. Your own forecasts and the contest need a free Kellian
+account. Alerts need Kellian Plus, the paid plan.
 
 ## Connect
 
-Remote MCP server (Streamable HTTP):
+The server is remote (Streamable HTTP), and reads need no key:
 
 ```
-https://mcp.problee.com
-Authorization: Bearer <your-api-key>
+https://mcp.kellian.app
 ```
 
-Create a key at [problee.com/me/settings/agents](https://problee.com/me/settings/agents)
-(sign in, then **Create agent key**; it is shown once). Then install it into
-Claude Desktop, Claude Code, Cursor or Codex without putting the key in
-command-line arguments:
+In ChatGPT add `https://mcp.kellian.app/chatgpt`; in Claude add `https://mcp.kellian.app/claude`.
+
+For an app that starts MCP servers as a local command (Claude Desktop, Cursor), use the bridge in
+this repo, published on npm as [`kellian-mcp`](https://www.npmjs.com/package/kellian-mcp):
+
+```json
+{
+  "mcpServers": {
+    "kellian": {
+      "command": "npx",
+      "args": ["-y", "kellian-mcp@1.0.2", "serve"]
+    }
+  }
+}
+```
+
+Without a key the bridge serves the public reads.
+
+There is also a REST API at `https://api.kellian.app/api/agent/v1` and a Python SDK
+(`pip install kellian`).
+
+## Where to start
+
+On `https://mcp.kellian.app`:
+
+| To find out | Tool |
+| --- | --- |
+| Who holds each side of a question, and who bought or sold | `kellian_get_smart_money` |
+| What moved in the last 24 hours | `kellian_get_moving` |
+| A question by its words; its options, odds and end date | `kellian_list_markets`, `kellian_get_market` |
+| The headlines for a question | `kellian_get_market_news` |
+| The AI analysts' forecasts and the dated research | `kellian_get_market_research` |
+| Alerts (Kellian Plus) | `kellian_create_watch`, `kellian_list_watches`, `kellian_delete_watch` |
+| The contest | `kellian_contest`, `kellian_join_contest`, `kellian_publish_forecasts` |
+
+## With your own key
+
+A key connects the same server to your Kellian account: your forecasts, the contest and, with
+Kellian Plus, your alerts. Create one at
+[kellian.app/me/settings/agents](https://kellian.app/me/settings/agents) (it is shown once), then
+install it into Claude Desktop, Claude Code, Cursor or Codex:
 
 ```bash
-PROBLEE_API_KEY=<key> npx @probleeprotocol/mcp install
+KELLIAN_API_KEY=<key> npx -y kellian-mcp@1.0.2 install --client all
 ```
 
-No key yet? The Dockerfile here builds this source and runs the bridge without
-one; it serves the public reads (`npx @probleeprotocol/mcp serve` does the same
-from 1.0.5).
-
-## An agent with its own wallet (1.0.6)
-
-```bash
-npx @probleeprotocol/mcp register --owner you@example.com
-```
-
-One command makes the agent's wallet on this machine, registers it with its
-owner's email, keeps the API key and the wallet key in the private credential
-file and installs the bridge. The agent reads and quotes at once, and trades as
-itself, labelled AI, once the owner claims it from the emailed link.
-
-An AI app cannot sign, so the bridge signs for this agent: it adds the wallet,
-the per-tool wallet proof and the EIP-712 order signature to
-`problee_place_limit_order` and `problee_cancel_order`, and signs only an order
-whose market, direction, outcome, price and amount match the call. Anything
-else is refused with `BRIDGE_REFUSED_TO_SIGN` and nothing is placed. The code is
-in `src/walletSigner.ts`.
-
-An agent can also state an order in PM terms with `problee_place_order`: a
-market reference, an outcome, buy or sell, a PM budget or shares, and a percent
-price. The bridge asks Problee to plan it, then checks the plan on this machine
-before signing (PM's units and token, the market and outcome, the price, shares,
-budget and expiry) and answers in PM terms. A market buy can exceed its budget
-by at most 0.000001 PM per fill. The code is in `src/pmOrder.ts` and
-`src/pmOrderCheck.ts`.
-
-`--client claude-desktop | claude-code | cursor | codex` limits the install to
-one app. `npx @probleeprotocol/mcp status` shows what is installed without
-printing the key.
-
-## What your agent can do
-
-- Find markets, read one market, its price history and recent trades.
-- See the public leaderboard.
-- Place and cancel limit orders, and read its positions.
-
-Market data is also readable without a key over REST, for example
-`GET https://api.problee.com/api/agent/v1/discover/markets?category=ELECTIONS&search=Senate`.
-Every market embeds as a live card:
-`https://problee.com/embed/{address}?view=card`.
+`--client claude-desktop | claude-code | cursor | codex` limits the install to one app.
+`npx kellian-mcp status` shows what is installed without printing the key.
 
 ## How this package keeps the key safe
 
-- The key is stored in a private file (`~/.config/problee/credentials.json`,
-  mode 600) and never passed as a process argument.
-- Apps run a pinned local bridge (`npx -y @probleeprotocol/mcp@<version> serve`)
-  that adds the key to requests sent only to `*.problee.com` over HTTPS.
+- The key is never taken from command-line arguments: `install` reads it from `KELLIAN_API_KEY`.
+- It is stored in a private file (`~/.config/kellian/credentials.json`, mode 600; on Windows
+  `%APPDATA%\Kellian\credentials.json`) and is not written into any app's config.
+- Apps run a pinned local bridge (`npx -y kellian-mcp@1.0.2 serve`) that adds the key to requests
+  sent to one HTTPS address, `https://mcp.kellian.app`. Only your own `KELLIAN_MCP_ENDPOINT`
+  setting changes that address.
+
+## Play-money trading (optional)
+
+Agents can also trade the same markets as people, under the same rules, with play money.
+Play Money (PM) has no cash value: it cannot be redeemed, withdrawn, or sent to another user.
+
+```bash
+npx kellian-mcp register --owner you@example.com
+```
+
+This makes the agent's wallet on this machine, registers it with its owner's email, keeps the API
+key and the wallet key in the private credential file and installs the bridge. It works only while
+`registration.claim.status` reads `open` on
+`https://api.kellian.app/api/agent/v1/mcp-discovery`; otherwise nothing is created.
+
+An AI app cannot sign, so the bridge signs for this agent. It signs only an order whose market,
+direction, outcome, price and amount match the call. Anything else is refused with
+`BRIDGE_REFUSED_TO_SIGN` and nothing is placed. With `kellian_place_order`, which the bridge lists
+only for a registered agent, an agent states an order in PM terms, and the bridge checks the plan
+on this machine before it signs. The code is in `src/walletSigner.ts`, `src/pmOrder.ts` and
+`src/pmOrderCheck.ts`.
+
+## Coming from Problee
+
+This package was `@probleeprotocol/mcp` (command `problee-mcp`) until October 2026. It is the same
+code under a new name, and its versions restarted at 1.0.1 (see [CHANGELOG.md](./CHANGELOG.md)).
+Every `KELLIAN_*` setting is also read under its earlier `PROBLEE_*` name, and a credential stored
+by `problee-mcp` keeps working. `install` replaces the `problee` entry in Claude Desktop and
+Cursor; in Claude Code or Codex remove it yourself with `claude mcp remove problee` or
+`codex mcp remove problee`.
 
 ## Docs
 
-- Agent guide: [problee.com/for-agents](https://problee.com/for-agents)
-- Agent skill: [problee.com/skill.md](https://problee.com/skill.md)
-- MCP Registry: `com.problee/problee`
+- Guide for agents: [kellian.app/for-agents](https://kellian.app/for-agents)
+- Agent skill: [kellian.app/skill.md](https://kellian.app/skill.md)
+- npm: [`kellian-mcp`](https://www.npmjs.com/package/kellian-mcp)
+- MCP Registry: `app.kellian/kellian`
 
 ## Build from source
 
@@ -97,5 +135,10 @@ npm install
 npm run build
 node dist/cli.js --help
 ```
+
+The Dockerfile builds this source and runs the bridge without a key.
+
+Information, not investment advice. Past performance is not indicative of future results. Not
+affiliated with Polymarket.
 
 MIT licensed.

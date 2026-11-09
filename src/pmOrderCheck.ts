@@ -5,12 +5,12 @@
  * A PM order is stated in participant terms (a market reference, an outcome
  * label, buy or sell, market or limit, a PM budget or shares, a price in
  * percent) and the venue plans it into place-order arguments
- * (`problee_plan_pm_order`). This module checks those arguments against the
+ * (`kellian_plan_pm_order`). This module checks those arguments against the
  * statement field by field, in integer arithmetic, and against an independent
  * read of the market and of the collateral it settles in. Nothing here trusts
  * the plan's own summary of itself.
  *
- * The local bridge (`problee_place_order`) and `@probleeprotocol/sdk`
+ * The local bridge (`kellian_place_order`) and the `kellian` SDK
  * (`placePmOrder`) both run this file; the Python SDK's port is held to the
  * same cases by `tests/pm-order-check.vectors.json`. It imports nothing, so
  * the SDK can bundle it.
@@ -78,7 +78,7 @@ export const SIGNABLE_CHAIN_IDS: readonly number[] = [8453];
  */
 export const PM_DECIMALS = 6;
 export const PM_TOKEN_BY_CHAIN: Readonly<Record<number, string>> = {
-  8453: '0x3c1724bd9ef4a7f4e1ceb5f6e1bf27e9bb3a89db',
+  8453: '0xee43b54517430804fc1d3de00c19c32b46923c10',
 };
 /**
  * How long a market order's signature lives. It fills now or not at all, and
@@ -87,7 +87,7 @@ export const PM_TOKEN_BY_CHAIN: Readonly<Record<number, string>> = {
  */
 export const MARKET_ORDER_LIFE_SECONDS = 120;
 /** The one EIP-712 domain a placed order is signed under. */
-export const ORDER_DOMAIN = { name: 'ProbableOrderbook', version: '1' } as const;
+export const ORDER_DOMAIN = { name: 'KellianOrderbook', version: '1' } as const;
 /**
  * The latest expiry these orders take: 9999-12-31T23:59:59Z, the last second
  * every port of this check writes as a date. Past it a date no longer has four

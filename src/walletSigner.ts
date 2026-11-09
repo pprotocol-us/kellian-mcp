@@ -10,6 +10,8 @@ import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
 
 import { apiOrigin, fetchNonce } from './api.js';
 import type { StoredCredential } from './credentials.js';
+import { ORDER_DOMAIN } from './pmOrderCheck.js';
+import { canonicalToolName, toolSuffix } from './toolNames.js';
 
 /**
  * The wallet of an agent registered with `register --owner`, held by the local
@@ -134,7 +136,8 @@ function priceBps(args: Args): number | undefined {
   return undefined;
 }
 
-const PLACE_ORDER = 'problee_place_limit_order';
+// Keyed by the tool name after its prefix (toolNames.ts).
+const PLACE_ORDER = 'place_limit_order';
 
 const BINDINGS: Record<string, (args: Args) => Binding> = {
   [PLACE_ORDER]: (args) => ({
@@ -143,7 +146,7 @@ const BINDINGS: Record<string, (args: Args) => Binding> = {
     resourceId: buildResourceId({ market: String(args.marketAddress ?? '') }),
     payload: { kind: orderKind(args), side: args.side, price: priceBps(args), amount: args.amount },
   }),
-  problee_cancel_order: (args) => ({
+  cancel_order: (args) => ({
     scope: 'trade:execute',
     chainId: null,
     resourceId:
@@ -154,20 +157,24 @@ const BINDINGS: Record<string, (args: Args) => Binding> = {
   }),
 };
 
-export const SIGNED_TOOLS: ReadonlySet<string> = new Set(Object.keys(BINDINGS));
+/** The signed tool a name is, by what follows its prefix, or null. */
+export function signedTool(name: string): string | null {
+  const suffix = toolSuffix(name);
+  return suffix !== null && Object.hasOwn(BINDINGS, suffix) ? suffix : null;
+}
 
 /** Inputs the bridge supplies itself, so the app is never asked for them. */
 const BRIDGE_INPUTS = ['walletAddress', 'walletSignature', 'signatureTimestamp', 'proofNonce', 'orderSignature', 'nonce'];
 
 const BRIDGE_NOTE =
-  'This local Problee bridge holds the agent wallet: it adds the wallet, the wallet proof and the order signature, and signs only the order stated in this call.';
+  'This local Kellian bridge holds the agent wallet: it adds the wallet, the wallet proof and the order signature, and signs only the order stated in this call.';
 
 /** The signed tools as the app should see them: the order terms only. */
 export function describeSignedTools(listed: ListToolsResult): ListToolsResult {
   return {
     ...listed,
     tools: listed.tools.map((tool) => {
-      if (!SIGNED_TOOLS.has(tool.name)) return tool;
+      if (signedTool(tool.name) === null) return tool;
       const properties: Record<string, object> = { ...(tool.inputSchema.properties ?? {}) };
       for (const name of BRIDGE_INPUTS) delete properties[name];
       const required = (tool.inputSchema.required ?? []).filter(
@@ -202,6 +209,7 @@ function bridgeSigns(wallet: BridgeWallet, args: Args): boolean {
   );
 }
 
+/** `tool` is the signed tool after its prefix; the proof names its canonical name. */
 async function withProof(wallet: BridgeWallet, tool: string, args: Args): Promise<Args> {
   const binding = BINDINGS[tool]!(args);
   const walletAddress = wallet.account.address.toLowerCase();
@@ -210,7 +218,7 @@ async function withProof(wallet: BridgeWallet, tool: string, args: Args): Promis
   const message = buildWalletProofMessage({
     agentId: wallet.agentId,
     apiKeyId: wallet.apiKeyId,
-    tool,
+    tool: canonicalToolName(tool),
     scope: binding.scope,
     chainId: binding.chainId,
     walletAddress,
@@ -243,7 +251,7 @@ function orderMismatch(wallet: BridgeWallet, args: Args, typedData: Record<strin
     return 'the server returned something other than an order to sign';
   }
   // A placed order is signed under one domain; its name and version are hashed as written.
-  if (domain.name !== 'ProbableOrderbook' || domain.version !== '1') {
+  if (domain.name !== ORDER_DOMAIN.name || domain.version !== ORDER_DOMAIN.version) {
     return 'the order to sign is under a different signing domain than an order placed here';
   }
   const same = (a: unknown, b: unknown) => String(a).toLowerCase() === String(b).toLowerCase();
@@ -269,7 +277,7 @@ function refusal(reason: string): CallToolResult {
         type: 'text',
         text: JSON.stringify({
           error: 'BRIDGE_REFUSED_TO_SIGN',
-          detail: `The local Problee bridge did not sign: ${reason}. Nothing was placed.`,
+          detail: `The local Kellian bridge did not sign: ${reason}. Nothing was placed.`,
         }),
       },
     ],
@@ -280,15 +288,16 @@ function refusal(reason: string): CallToolResult {
 export function signingCallTool(wallet: BridgeWallet, forward: Forward): Forward {
   return async (params) => {
     const args = (params.arguments ?? {}) as Args;
-    if (!SIGNED_TOOLS.has(params.name) || !bridgeSigns(wallet, args)) return forward(params);
+    const tool = signedTool(params.name);
+    if (tool === null || !bridgeSigns(wallet, args)) return forward(params);
 
     const idempotencyKey =
       typeof args.idempotencyKey === 'string' && args.idempotencyKey ? args.idempotencyKey : randomUUID();
     const first = await forward({
       ...params,
-      arguments: await withProof(wallet, params.name, { ...args, idempotencyKey }),
+      arguments: await withProof(wallet, tool, { ...args, idempotencyKey }),
     });
-    if (params.name !== PLACE_ORDER) return first;
+    if (tool !== PLACE_ORDER) return first;
 
     const prepared = resultValue(first);
     if (!isRecord(prepared) || prepared.requiresSignature !== true || !isRecord(prepared.typedData)) {
@@ -304,7 +313,7 @@ export function signingCallTool(wallet: BridgeWallet, forward: Forward): Forward
     );
     return forward({
       ...params,
-      arguments: await withProof(wallet, params.name, {
+      arguments: await withProof(wallet, tool, {
         ...args,
         // The signed submission is a different request, so it gets its own key,
         // derived so that one caller key keeps the whole call retry-safe.

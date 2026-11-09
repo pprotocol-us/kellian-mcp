@@ -1,5 +1,5 @@
 // Per-client install handlers. Each one knows where its config lives and
-// how to merge a Problee MCP server entry without clobbering existing servers.
+// how to merge a Kellian MCP server entry without clobbering existing servers.
 //
 // Returns { installed, configPath, action } where action is one of:
 //   "added"    — entry written into config
@@ -34,14 +34,49 @@ export type Result = {
   detail?: string;
 };
 
-const SERVER_NAME = 'problee';
+const SERVER_NAME = 'kellian';
 const PROXY_COMMAND = 'npx';
 // Pin the bridge package. Registration rewrites this entry on upgrades, so a
 // client restart cannot silently execute an unreviewed newer package.
-const PROXY_ARGS = ['-y', '@probleeprotocol/mcp@1.0.7', 'serve'] as const;
+const PROXY_ARGS = ['-y', 'kellian-mcp@1.0.2', 'serve'] as const;
 
 function secureProxyEntry(): { command: string; args: string[] } {
   return { command: PROXY_COMMAND, args: [...PROXY_ARGS] };
+}
+
+/**
+ * The entry this installer wrote before the rename, under `problee`: the
+ * `@probleeprotocol/mcp` bridge, or the remote mcp.problee.com URL an older
+ * install put there. It is replaced by this one rather than left beside it,
+ * which would list every tool twice. Any other `problee` entry is not ours and
+ * is left alone.
+ */
+const PREVIOUS_SERVER_NAME = 'problee';
+
+function isPreviousEntry(entry: unknown): boolean {
+  const value = entry as { command?: unknown; args?: unknown; url?: unknown } | null | undefined;
+  if (typeof value?.url === 'string') return /^https:\/\/mcp\.problee\.com(\/|$)/u.test(value.url);
+  return (
+    value?.command === PROXY_COMMAND &&
+    Array.isArray(value.args) &&
+    value.args.some((arg) => typeof arg === 'string' && arg.startsWith('@probleeprotocol/mcp'))
+  );
+}
+
+/** Puts this entry in a JSON config's servers, retiring the previous one; says what it did. */
+function mergeEntry<T>(servers: Record<string, T> | undefined, next: T): { servers: Record<string, T>; action: Action } {
+  const merged: Record<string, T> = { ...(servers ?? {}), [SERVER_NAME]: next };
+  const retired = isPreviousEntry(merged[PREVIOUS_SERVER_NAME]);
+  if (retired) delete merged[PREVIOUS_SERVER_NAME];
+  const existing = servers?.[SERVER_NAME];
+  const action: Action = !existing
+    ? retired
+      ? 'updated'
+      : 'added'
+    : JSON.stringify(existing) === JSON.stringify(next) && !retired
+      ? 'skipped'
+      : 'updated';
+  return { servers: merged, action };
 }
 
 function readJson<T>(path: string): T | null {
@@ -120,14 +155,8 @@ interface ClaudeDesktopConfig {
 function installClaudeDesktop(): Result {
   const path = claudeDesktopConfigPath();
   const config: ClaudeDesktopConfig = readJson<ClaudeDesktopConfig>(path) ?? {};
-  const existing = config.mcpServers?.[SERVER_NAME];
-  const next = secureProxyEntry();
-  const action: Action = !existing
-    ? 'added'
-    : JSON.stringify(existing) === JSON.stringify(next)
-      ? 'skipped'
-      : 'updated';
-  config.mcpServers = { ...(config.mcpServers ?? {}), [SERVER_NAME]: next };
+  const { servers, action } = mergeEntry(config.mcpServers, secureProxyEntry());
+  config.mcpServers = servers;
   if (action !== 'skipped') writeJson(path, config);
   return { client: 'claude-desktop', action, configPath: path };
 }
@@ -161,7 +190,7 @@ function installClaudeCode(): Result {
       return {
         client: 'claude-code',
         action: 'manual',
-        detail: (removed.stderr ?? '').trim() || 'could not replace existing Problee entry',
+        detail: (removed.stderr ?? '').trim() || 'could not replace existing Kellian entry',
       };
     }
     const replaced = spawnSync(
@@ -204,14 +233,8 @@ interface CursorConfig {
 function installCursor(): Result {
   const path = cursorGlobalConfigPath();
   const config: CursorConfig = readJson<CursorConfig>(path) ?? {};
-  const existing = config.mcpServers?.[SERVER_NAME];
-  const next = secureProxyEntry();
-  const action: Action = !existing
-    ? 'added'
-    : JSON.stringify(existing) === JSON.stringify(next)
-      ? 'skipped'
-      : 'updated';
-  config.mcpServers = { ...(config.mcpServers ?? {}), [SERVER_NAME]: next };
+  const { servers, action } = mergeEntry(config.mcpServers, secureProxyEntry());
+  config.mcpServers = servers;
   if (action !== 'skipped') writeJson(path, config);
   return { client: 'cursor', action, configPath: path };
 }
@@ -250,7 +273,7 @@ function installCodex(): Result {
       return {
         client: 'codex',
         action: 'manual',
-        detail: (removed.stderr ?? '').trim() || 'could not replace existing Problee entry',
+        detail: (removed.stderr ?? '').trim() || 'could not replace existing Kellian entry',
       };
     }
     const replaced = spawnSync(

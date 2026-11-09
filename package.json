@@ -1,12 +1,17 @@
 {
-  "name": "@probleeprotocol/mcp",
-  "version": "1.0.7",
-  "description": "Installer and local credential bridge for the Problee MCP server: agents and people put their calls on the record.",
+  "name": "kellian-mcp",
+  "version": "1.0.2",
+  "description": "Install the Kellian MCP server: market research, AI analysts' odds and play-money markets where agents trade before they go live.",
+  "mcpName": "app.kellian/kellian",
   "license": "MIT",
-  "author": "Problee Protocol <dev@problee.com>",
-  "homepage": "https://problee.com/developer",
-  "bugs": "https://problee.com/developer",
-  "funding": "https://problee.com",
+  "author": "Kellian <hello@kellian.app>",
+  "homepage": "https://kellian.app/developer",
+  "bugs": "https://kellian.app/developer",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pprotocol-us/kellian-mcp.git"
+  },
+  "funding": "https://kellian.app",
   "type": "module",
   "engines": {
     "node": ">=18"
@@ -17,13 +22,14 @@
   "files": [
     "dist",
     "README.md",
+    "CHANGELOG.md",
     "src"
   ],
   "bin": {
-    "problee-mcp": "dist/cli.js"
+    "kellian-mcp": "dist/cli.js"
   },
   "keywords": [
-    "problee",
+    "kellian",
     "mcp",
     "model-context-protocol",
     "claude",
@@ -33,25 +39,26 @@
     "agents",
     "ai-tools",
     "base",
-    "play-money"
+    "play-money",
+    "forecasting",
+    "market-research",
+    "agent-testing"
   ],
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "viem": "^2.47.19",
     "ws": "8.21.0",
     "zod": "~4.6.5"
   },
   "scripts": {
     "build": "tsup",
+    "dev": "tsup --watch",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^22.7.5",
+    "@types/ws": "^8.5.13",
     "tsup": "^8.3.0",
     "typescript": "^5.6.2"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/pprotocol-us/problee-mcp.git"
   }
 }

@@ -14,21 +14,22 @@ import {
   type ServerCapabilities,
 } from "@modelcontextprotocol/sdk/types.js";
 
-import { endpointFromDiscovery } from "./api.js";
+import { endpointFromDiscovery, storedEndpoint } from "./api.js";
+import { setting } from "./env.js";
 import { loadCredential } from "./credentials.js";
 import { describePmOrderTool, placingPmOrders } from "./pmOrder.js";
 import { bridgeWalletFrom, describeSignedTools, signingCallTool } from "./walletSigner.js";
 
 export async function serveSecureProxy(version: string): Promise<void> {
   const stored = loadCredential();
-  const apiKey = process.env.PROBLEE_API_KEY ?? stored?.apiKey;
+  const apiKey = setting("API_KEY") ?? stored?.apiKey;
   const endpoint =
-    process.env.PROBLEE_MCP_ENDPOINT ?? stored?.endpoint ?? endpointFromDiscovery(null);
+    setting("MCP_ENDPOINT") ?? (stored ? storedEndpoint(stored.endpoint) : endpointFromDiscovery(null));
   // A registered agent's own wallet, when this credential holds one.
   const wallet = bridgeWalletFrom(stored, apiKey);
 
   const upstream = new Client({
-    name: "@probleeprotocol/mcp-secure-proxy",
+    name: "kellian-mcp-secure-proxy",
     version,
   });
   // Without a key the server lists and runs only its public reads.
@@ -47,7 +48,7 @@ export async function serveSecureProxy(version: string): Promise<void> {
   if (advertised.prompts) capabilities.prompts = { listChanged: false };
 
   const downstream = new Server(
-    { name: "@probleeprotocol/mcp", version },
+    { name: "kellian-mcp", version },
     {
       capabilities,
       instructions: upstream.getInstructions(),
@@ -95,10 +96,10 @@ export async function serveSecureProxy(version: string): Promise<void> {
   downstream.onclose = () => void close();
   upstream.onclose = () => void close();
   downstream.onerror = (error) => {
-    process.stderr.write(`Problee MCP local bridge error: ${error.message}\n`);
+    process.stderr.write(`Kellian MCP local bridge error: ${error.message}\n`);
   };
   upstream.onerror = (error) => {
-    process.stderr.write(`Problee MCP upstream error: ${error.message}\n`);
+    process.stderr.write(`Kellian MCP upstream error: ${error.message}\n`);
   };
   process.once("SIGINT", () => void close());
   process.once("SIGTERM", () => void close());

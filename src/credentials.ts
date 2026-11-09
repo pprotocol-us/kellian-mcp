@@ -15,6 +15,8 @@ import { randomUUID } from 'node:crypto';
 import { homedir, platform } from 'node:os';
 import { dirname, join } from 'node:path';
 
+import { setting } from './env.js';
+
 export interface StoredCredential {
   version: 1;
   apiKey: string;
@@ -38,33 +40,45 @@ function isWallet(value: unknown): boolean {
   );
 }
 
-function defaultCredentialPath(): string {
+function defaultCredentialPath(folder: 'Kellian' | 'Problee'): string {
   if (platform() === 'win32') {
     const appdata = process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming');
-    return join(appdata, 'Problee', 'credentials.json');
+    return join(appdata, folder, 'credentials.json');
   }
   const configHome = process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config');
-  return join(configHome, 'problee', 'credentials.json');
+  return join(configHome, folder.toLowerCase(), 'credentials.json');
 }
 
+/** Where this bridge keeps the credential it writes. */
 export function credentialPath(): string {
-  return process.env.PROBLEE_CREDENTIALS_FILE ?? defaultCredentialPath();
+  return setting('CREDENTIALS_FILE') ?? defaultCredentialPath('Kellian');
+}
+
+/**
+ * Where the credential is read from: the one above, or, while there is none,
+ * the one `problee-mcp` wrote before the rename. The next write lands above.
+ */
+export function readableCredentialPath(): string {
+  const path = credentialPath();
+  if (setting('CREDENTIALS_FILE') !== undefined || existsSync(path)) return path;
+  const previous = defaultCredentialPath('Problee');
+  return existsSync(previous) ? previous : path;
 }
 
 function assertPrivateFile(path: string): void {
   const stat = lstatSync(path);
   if (!stat.isFile()) {
-    throw new Error(`Problee credential path is not a regular file: ${path}`);
+    throw new Error(`Kellian credential path is not a regular file: ${path}`);
   }
   if (platform() !== 'win32' && (stat.mode & 0o077) !== 0) {
     throw new Error(
-      `Problee credential file permissions are too broad (${(stat.mode & 0o777).toString(8)}); run chmod 600 ${path}`
+      `Kellian credential file permissions are too broad (${(stat.mode & 0o777).toString(8)}); run chmod 600 ${path}`
     );
   }
 }
 
 export function loadCredential(): StoredCredential | null {
-  const path = credentialPath();
+  const path = readableCredentialPath();
   if (!existsSync(path)) return null;
   assertPrivateFile(path);
 
@@ -72,7 +86,7 @@ export function loadCredential(): StoredCredential | null {
   try {
     parsed = JSON.parse(readFileSync(path, 'utf8'));
   } catch {
-    throw new Error(`Problee credential file is not valid JSON: ${path}`);
+    throw new Error(`Kellian credential file is not valid JSON: ${path}`);
   }
   if (
     !parsed ||
@@ -84,7 +98,7 @@ export function loadCredential(): StoredCredential | null {
     !(parsed as Partial<StoredCredential>).endpoint ||
     !isWallet((parsed as Partial<StoredCredential>).wallet)
   ) {
-    throw new Error(`Problee credential file has an unsupported shape: ${path}`);
+    throw new Error(`Kellian credential file has an unsupported shape: ${path}`);
   }
   return parsed as StoredCredential;
 }
@@ -93,7 +107,7 @@ export function storeCredential(
   credential: Omit<StoredCredential, 'version' | 'storedAt'>
 ): StoredCredential {
   if (!credential.apiKey || !credential.endpoint) {
-    throw new Error('Cannot persist an empty Problee credential or endpoint');
+    throw new Error('Cannot persist an empty Kellian credential or endpoint');
   }
 
   const path = credentialPath();

@@ -8,29 +8,34 @@ import {
   type PmOrderToPlace,
   PmOrderRetries,
 } from './pmOrderCheck.js';
+import { prefixOf, type ToolPrefix, toolSuffix } from './toolNames.js';
 import { resultValue } from './walletSigner.js';
 
 /**
- * `problee_place_order`: an order stated in PM terms, placed by this bridge.
+ * `kellian_place_order`: an order stated in PM terms, placed by this bridge.
  *
  * The app states the order the way a participant does. The bridge asks the
- * venue to plan it (`problee_plan_pm_order`), reads the market and the
+ * venue to plan it (`kellian_plan_pm_order`), reads the market and the
  * collateral list on its own, checks the plan against the statement
  * (`pmOrderCheck.ts`), and only then hands the checked arguments to the
- * existing `problee_place_limit_order` signing path, which compares the order
+ * existing `kellian_place_limit_order` signing path, which compares the order
  * it is given to sign with those arguments once more. The app never sees an
  * address, a base unit, a proof or a signature.
+ *
+ * Every name carries the prefix the venue lists (toolNames.ts): the tool is
+ * `problee_place_order` beside a venue that still lists `problee_*` names.
  */
-export const PM_ORDER_TOOL = 'problee_place_order';
-const PLAN_TOOL = 'problee_plan_pm_order';
-const PLACE_TOOL = 'problee_place_limit_order';
+const PM_ORDER = 'place_order';
+const PLAN = 'plan_pm_order';
+const PLACE = 'place_limit_order';
+const named = (prefix: ToolPrefix, suffix: string) => `${prefix}${suffix}`;
 const PM_ORDER_KEYS = [
   'marketReference', 'outcome', 'action', 'orderType', 'budgetPm', 'shares', 'limitPricePercent', 'expiresAt',
 ];
 
-const DESCRIPTION = [
+const description = (prefix: ToolPrefix) => [
   'Place an order stated in PM terms: the market reference (mkt_… from discovery), the outcome label, buy or sell, market or limit, `budgetPm` for a market buy (PM to spend, fee included) or `shares` otherwise, and `limitPricePercent` for a limit order, with an optional `expiresAt`.',
-  'This local Problee bridge plans the order with problee_plan_pm_order, reads the market and checks the plan against what you stated: the market, the outcome, buy or sell, the price, the shares, the expiry, that a market buy can cost no more than its budget with the fee, and that the market settles in PM. Only then does it sign and place that order; a market order\'s signature lives two minutes. Rounding on each fill means a market buy that fills in several pieces can exceed its budget by at most 0.000001 PM per fill.',
+  'This local Kellian bridge plans the order with ' + named(prefix, PLAN) + ', reads the market and checks the plan against what you stated: the market, the outcome, buy or sell, the price, the shares, the expiry, that a market buy can cost no more than its budget with the fee, and that the market settles in PM. Only then does it sign and place that order; a market order\'s signature lives two minutes. Rounding on each fill means a market buy that fills in several pieces can exceed its budget by at most 0.000001 PM per fill.',
   'It answers in PM terms: the order reference (use it to cancel), the status in words, the outcome, the shares, the shares filled and remaining where they are already settled, the price and the estimate. A plan that differs from what you stated is refused with BRIDGE_REFUSED_TO_SIGN and nothing is placed. Reuse idempotencyKey only to retry the same order: while that order lives, a retry places exactly what the first call placed, and the key with a different order is refused.',
 ].join('\n\n');
 
@@ -45,12 +50,14 @@ const isRecord = (value: unknown): value is Args =>
  * the venue lists both: its input is the plan tool's own, plus a retry key.
  */
 export function describePmOrderTool(listed: ListToolsResult): ListToolsResult {
-  const plan = listed.tools.find((tool) => tool.name === PLAN_TOOL);
-  const place = listed.tools.findIndex((tool) => tool.name === PLACE_TOOL);
-  if (!plan || place < 0 || listed.tools.some((tool) => tool.name === PM_ORDER_TOOL)) return listed;
+  const plan = listed.tools.find((tool) => toolSuffix(tool.name) === PLAN);
+  if (!plan) return listed;
+  const prefix = prefixOf(plan.name);
+  const place = listed.tools.findIndex((tool) => tool.name === named(prefix, PLACE));
+  if (place < 0 || listed.tools.some((tool) => tool.name === named(prefix, PM_ORDER))) return listed;
   const tool = {
-    name: PM_ORDER_TOOL,
-    description: DESCRIPTION,
+    name: named(prefix, PM_ORDER),
+    description: description(prefix),
     inputSchema: {
       ...plan.inputSchema,
       properties: {
@@ -78,7 +85,7 @@ function refused(check: PmCheck, reason: string): CallToolResult {
         text: JSON.stringify({
           error: 'BRIDGE_REFUSED_TO_SIGN',
           check,
-          detail: `The local Problee bridge did not sign: ${reason}. Nothing was placed.`,
+          detail: `The local Kellian bridge did not sign: ${reason}. Nothing was placed.`,
         }),
       },
     ],
@@ -97,9 +104,9 @@ async function read(forward: Forward, name: string, args: Args): Promise<unknown
 }
 
 /** Plan the order, read the market and the collateral on their own, and check the plan against the statement. */
-async function planAndCheck(order: Args, forward: Forward): Promise<PmOrderToPlace | CallToolResult> {
+async function planAndCheck(order: Args, forward: Forward, prefix: ToolPrefix): Promise<PmOrderToPlace | CallToolResult> {
   // The venue plans the order; its refusals are already in plain words.
-  const planned = await forward({ name: PLAN_TOOL, arguments: order });
+  const planned = await forward({ name: named(prefix, PLAN), arguments: order });
   if (planned.isError) return planned;
   const plan = resultValue(planned);
 
@@ -110,8 +117,8 @@ async function planAndCheck(order: Args, forward: Forward): Promise<PmOrderToPla
     typeof target.chainId === 'number' && Number.isSafeInteger(target.chainId);
   const [market, collateral] = readable
     ? await Promise.all([
-        read(forward, 'problee_get_market', { address: target!.marketAddress, chainId: target!.chainId }),
-        read(forward, 'problee_list_collateral', { chainId: target!.chainId }),
+        read(forward, named(prefix, 'get_market'), { address: target!.marketAddress, chainId: target!.chainId }),
+        read(forward, named(prefix, 'list_collateral'), { chainId: target!.chainId }),
       ])
     : [null, null];
 
@@ -125,7 +132,13 @@ async function planAndCheck(order: Args, forward: Forward): Promise<PmOrderToPla
   };
 }
 
-async function placePmOrder(args: Args, forward: Forward, place: Forward, retries: PmOrderRetries): Promise<CallToolResult> {
+async function placePmOrder(
+  args: Args,
+  forward: Forward,
+  place: Forward,
+  retries: PmOrderRetries,
+  prefix: ToolPrefix,
+): Promise<CallToolResult> {
   const { idempotencyKey, ...order } = args;
   const unknownKey = Object.keys(order).find((key) => !PM_ORDER_KEYS.includes(key));
   if (unknownKey !== undefined) return refused('intent', `${unknownKey} is not part of a PM order`);
@@ -141,7 +154,7 @@ async function placePmOrder(args: Args, forward: Forward, place: Forward, retrie
   if (recalled && !recalled.ok) return refused(recalled.check, recalled.reason);
   let toPlace = recalled?.toPlace ?? null;
   if (!toPlace) {
-    const checked = await planAndCheck(order, forward);
+    const checked = await planAndCheck(order, forward, prefix);
     if ('content' in checked) return checked;
     toPlace = checked;
     if (idempotencyKey !== undefined) retries.remember(idempotencyKey, order, toPlace);
@@ -149,7 +162,7 @@ async function placePmOrder(args: Args, forward: Forward, place: Forward, retrie
 
   // The existing signing path, unchanged, with the checked arguments only.
   const placed = await place({
-    name: PLACE_TOOL,
+    name: named(prefix, PLACE),
     arguments: { ...toPlace.placeOrder, ...(idempotencyKey === undefined ? {} : { idempotencyKey }) },
   });
   if (placed.isError) return placed;
@@ -157,9 +170,11 @@ async function placePmOrder(args: Args, forward: Forward, place: Forward, retrie
   return { content: [{ type: 'text', text: JSON.stringify(view) }] };
 }
 
-/** Answers `problee_place_order` here; every other call goes to `place`, the signing path. */
+/** Answers `kellian_place_order` (or `problee_place_order`) here; every other call goes to `place`, the signing path. */
 export function placingPmOrders(forward: Forward, place: Forward): Forward {
   const retries = new PmOrderRetries();
   return (params) =>
-    params.name === PM_ORDER_TOOL ? placePmOrder((params.arguments ?? {}) as Args, forward, place, retries) : place(params);
+    toolSuffix(params.name) === PM_ORDER
+      ? placePmOrder((params.arguments ?? {}) as Args, forward, place, retries, prefixOf(params.name))
+      : place(params);
 }

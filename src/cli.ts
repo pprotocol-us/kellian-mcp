@@ -3,21 +3,22 @@ import { argv, exit, stderr, stdout } from 'node:process';
 
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 
-import { apiOrigin, endpointFromDiscovery, fetchDiscovery, fetchNonce } from './api.js';
+import { API_ORIGIN, apiOrigin, endpointFromDiscovery, fetchDiscovery, fetchNonce, PUBLIC_DOMAIN } from './api.js';
 import { ALL_CLIENTS, installFor, statusAll } from './clients.js';
 import type { ClientId, Result } from './clients.js';
-import { credentialPath, loadCredential, storeCredential } from './credentials.js';
+import { credentialPath, loadCredential, readableCredentialPath, storeCredential } from './credentials.js';
+import { setting } from './env.js';
 import { serveSecureProxy } from './proxy.js';
 
-const CLI_VERSION = '1.0.7';
+const CLI_VERSION = '1.0.2';
 const HELP = `\
-problee-mcp ${CLI_VERSION} — securely install the Problee MCP server
+kellian-mcp ${CLI_VERSION} — securely install the Kellian MCP server
 
 Usage:
-  npx @probleeprotocol/mcp register --owner <email> [--name <name>] [--client <id>]
-  PROBLEE_API_KEY=<key> npx @probleeprotocol/mcp install [--client <id>]
-  npx @probleeprotocol/mcp status
-  npx @probleeprotocol/mcp --help
+  npx kellian-mcp register --owner <email> [--name <name>] [--client <id>]
+  KELLIAN_API_KEY=<key> npx kellian-mcp install [--client <id>]
+  npx kellian-mcp status
+  npx kellian-mcp --help
 
 Commands:
   register    With --owner: create an agent with its own wallet, register it
@@ -26,7 +27,7 @@ Commands:
               the emailed link. The wallet key stays in the private credential
               file; the local bridge signs this agent's orders with it.
               Without --owner: print the two ways to get a key.
-  install     Install from an existing private credential or PROBLEE_API_KEY.
+  install     Install from an existing private credential or KELLIAN_API_KEY.
               API keys are rejected on command-line arguments.
   status      Show credential and client registration status without exposing secrets.
   serve       Secure local stdio-to-HTTPS proxy used by installed MCP clients;
@@ -36,11 +37,14 @@ Client:
   --client    claude-desktop, claude-code, cursor, codex, or all (default)
 
 Examples:
-  npx @probleeprotocol/mcp register --owner you@example.com
-  PROBLEE_API_KEY=<key> npx @probleeprotocol/mcp install --client cursor
-  npx @probleeprotocol/mcp status
+  npx kellian-mcp register --owner you@example.com
+  KELLIAN_API_KEY=<key> npx kellian-mcp install --client cursor
+  npx kellian-mcp status
 
-Docs: https://problee.com/for-agents
+Every KELLIAN_* setting is also read under its earlier PROBLEE_* name, and a
+credential stored by problee-mcp is used until this one stores its own.
+
+Docs: https://${PUBLIC_DOMAIN}/for-agents
 `;
 
 function parseArgs(args: readonly string[]): {
@@ -80,7 +84,7 @@ function resolveClients(value: string | undefined): ClientId[] {
 function assertNoArgvSecret(flags: Record<string, string>): void {
   if (flags['api-key']) {
     fail(
-      'refusing --api-key because process arguments are observable; use PROBLEE_API_KEY'
+      'refusing --api-key because process arguments are observable; use KELLIAN_API_KEY'
     );
   }
 }
@@ -107,7 +111,7 @@ function installClients(clients: readonly ClientId[]): Result[] {
   );
   if (successful.length) {
     stdout.write(
-      `\nNext: restart the affected app(s) and ask "What MCP tools do you have from Problee?"\n`
+      `\nNext: restart the affected app(s) and ask "What MCP tools do you have from Kellian?"\n`
     );
   } else {
     throw new Error(
@@ -125,11 +129,11 @@ async function cmdInstall(flags: Record<string, string>): Promise<void> {
   assertNoArgvSecret(flags);
   const clients = resolveClients(flags.client);
   const endpoint = await currentEndpoint();
-  const envApiKey = process.env.PROBLEE_API_KEY;
+  const envApiKey = setting('API_KEY');
   const existing = loadCredential();
   const apiKey = envApiKey ?? existing?.apiKey;
   if (!apiKey) {
-    fail('no private credential found; run `npx @probleeprotocol/mcp register`');
+    fail('no private credential found; run `npx kellian-mcp register`');
   }
 
   // A registered agent's id and wallet belong to its key: kept with it, dropped for another key.
@@ -149,7 +153,7 @@ async function cmdInstall(flags: Record<string, string>): Promise<void> {
 }
 
 function openVerificationUrl(url: string): void {
-  if (process.env.PROBLEE_NO_BROWSER === '1') return;
+  if (setting('NO_BROWSER') === '1') return;
   const opener =
     process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
   const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
@@ -160,7 +164,7 @@ function openVerificationUrl(url: string): void {
   }
 }
 
-const REGISTER_URL = 'https://problee.com/me/settings/agents';
+const REGISTER_URL = `https://${PUBLIC_DOMAIN}/me/settings/agents`;
 
 /**
  * Without --owner: the two ways to a key (the account's own, and the claimed
@@ -173,22 +177,23 @@ function printKeyPaths(clients: readonly ClientId[]): never {
       'There are two ways to get an API key:',
       '',
       `  1. Your account   ${REGISTER_URL}`,
-      '                    Sign in, then Create agent key. It is shown once and trades as you,',
-      '                    with full execute scopes; there is no tier to request.',
-      '  2. Claimed agent  npx @probleeprotocol/mcp register --owner <email>',
+      '                    Sign in, then Create agent key (shown once). It reads markets, prices',
+      "                    and your positions as you; every order also needs your account's",
+      '                    signature, which this bridge does not make.',
+      '  2. Claimed agent  npx kellian-mcp register --owner <email>',
       "                    Creates the agent's own wallet here and registers it with ownerEmail",
-      '                    (POST https://api.problee.com/api/agent/v1/register). It reads and quotes',
+      `                    (POST ${API_ORIGIN}/api/agent/v1/register). It reads and quotes`,
       '                    at once, and trades as itself once its owner claims it from the emailed link.',
       '                    Closed by default. Read registration.claim.status on',
-      '                    GET https://api.problee.com/api/agent/v1/mcp-discovery before calling it.',
+      `                    GET ${API_ORIGIN}/api/agent/v1/mcp-discovery before calling it.`,
       '',
       'With a key from your account, install without putting it in process arguments:',
-      `  PROBLEE_API_KEY=<key> npx @probleeprotocol/mcp install --client ${clients.join(',')}`,
+      `  KELLIAN_API_KEY=<key> npx kellian-mcp install --client ${clients.join(',')}`,
       '',
     ].join('\n')
   );
   openVerificationUrl(REGISTER_URL);
-  fail('no credential was created; run install with PROBLEE_API_KEY once you hold a key');
+  fail('no credential was created; run install with KELLIAN_API_KEY once you hold a key');
 }
 
 interface RegisterReply {
@@ -219,8 +224,8 @@ async function cmdRegister(flags: Record<string, string>): Promise<void> {
   const existing = loadCredential();
   if (existing) {
     fail(
-      `a credential already exists at ${credentialPath()} (${existing.keyPrefix ?? 'stored'}…); ` +
-        'to register another agent, set PROBLEE_CREDENTIALS_FILE to a new path'
+      `a credential already exists at ${readableCredentialPath()} (${existing.keyPrefix ?? 'stored'}…); ` +
+        'to register another agent, set KELLIAN_CREDENTIALS_FILE to a new path'
     );
   }
   const discovery = await fetchDiscovery();
@@ -276,17 +281,17 @@ async function cmdRegister(flags: Record<string, string>): Promise<void> {
     installClients(clients);
   } catch (error) {
     stdout.write(
-      `${error instanceof Error ? error.message : String(error)}\nThe agent is registered; install it later with: npx @probleeprotocol/mcp install\n`
+      `${error instanceof Error ? error.message : String(error)}\nThe agent is registered; install it later with: npx kellian-mcp install\n`
     );
   }
 }
 
 function cmdStatus(): void {
   const credential = loadCredential();
-  stdout.write(`Problee MCP — credential and registered clients\n\n`);
+  stdout.write(`Kellian MCP — credential and registered clients\n\n`);
   stdout.write(
     credential
-      ? `  ✓ credential       ${credential.keyPrefix ?? 'stored'}… (${credentialPath()}, private)\n`
+      ? `  ✓ credential       ${credential.keyPrefix ?? 'stored'}… (${readableCredentialPath()}, private)\n`
       : `  · credential       not found (${credentialPath()})\n`
   );
   if (credential?.wallet) {
@@ -299,7 +304,7 @@ function cmdStatus(): void {
       `  ${symbol} ${entry.client.padEnd(16)} ${entry.registered ? 'registered' : 'not registered'} ${where}\n      ${entry.configPath}\n`
     );
   }
-  stdout.write(`\nTo create an agent and install it: \`npx @probleeprotocol/mcp register --owner <email>\`\n`);
+  stdout.write(`\nTo create an agent and install it: \`npx kellian-mcp register --owner <email>\`\n`);
 }
 
 async function main(): Promise<void> {

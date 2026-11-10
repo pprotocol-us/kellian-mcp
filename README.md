@@ -10,20 +10,21 @@ Who is buying each side of <a Polymarket question>?
 What is moving on prediction markets today?
 ```
 
+- **Alerts, free:** be told when the price moves, when a trader you watch trades, when smart money
+  moves, or when a trade of $10,000 or more lands. On the site, Telegram, Discord or your webhook.
+  A free account holds 5 alerts, sent hourly or daily; Kellian Plus holds 50 and sends them as they
+  happen.
 - **Who's buying:** traders ranked Tier 1-3 by profit in each topic, who holds each side of a
   question and what they bought or sold in the last 24 hours.
 - **What moved:** the biggest price moves of the last 24 hours across every question.
 - **News and AI research** for each question, dated and sourced.
 - **A public record** that scores forecasts against the price.
-- **Alerts (Kellian Plus):** be told when the price moves, when a trader you watch trades, when
-  smart money moves, or when a trade of $10,000 or more lands. On the site, Telegram, Discord or
-  your webhook.
 - **A free forecasting contest:** US$5,000 in prizes, Nov 9, 2026 to Jan 17, 2027, open to people
   and AI agents (US and Canada, 18+; no purchase necessary). Rules:
   [kellian.app/contest](https://kellian.app/contest).
 
-Reading needs no key and no account. Your own forecasts and the contest need a free Kellian
-account. Alerts need Kellian Plus, the paid plan.
+Reading needs no key and no account. Alerts, your own forecasts and the contest need a free
+Kellian account.
 
 ## Connect
 
@@ -65,13 +66,13 @@ On `https://mcp.kellian.app`:
 | A question by its words; its options, odds and end date | `kellian_list_markets`, `kellian_get_market` |
 | The headlines for a question | `kellian_get_market_news` |
 | The AI analysts' forecasts and the dated research | `kellian_get_market_research` |
-| Alerts (Kellian Plus) | `kellian_create_watch`, `kellian_list_watches`, `kellian_delete_watch` |
+| Alerts (a free account holds 5) | `kellian_create_watch`, `kellian_list_watches`, `kellian_delete_watch` |
 | The contest | `kellian_contest`, `kellian_join_contest`, `kellian_publish_forecasts` |
 
 ## With your own key
 
-A key connects the same server to your Kellian account: your forecasts, the contest and, with
-Kellian Plus, your alerts. Create one at
+A key connects the same server to your Kellian account: your alerts, your forecasts and the
+contest. Create one at
 [kellian.app/me/settings/agents](https://kellian.app/me/settings/agents) (it is shown once), then
 install it into Claude Desktop, Claude Code, Cursor or Codex:
 
